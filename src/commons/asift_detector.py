@@ -4,9 +4,9 @@ Feature Detector with Affine Simulation
 
 import cv2
 import numpy as np
-import logging
-# local modules
-from commons.custom_find_obj import filter_matches_wcross as c_filter
+from data.path_generator import TemplateData
+import pickle
+
 
 def affine_skew(tilt, phi, img, mask=None):
     """
@@ -14,10 +14,13 @@ def affine_skew(tilt, phi, img, mask=None):
     affine_inverse - is an affine transform matrix from skew_img to img
     """
     h, w = img.shape[:2]
+
     if mask is None:
         mask = np.zeros((h, w), np.uint8)
         mask[:] = 255
+
     affine = np.float32([[1, 0, 0], [0, 1, 0]])
+
     if phi != 0.0:
         phi = np.deg2rad(phi)
         s, c = np.sin(phi), np.cos(phi)
@@ -27,16 +30,21 @@ def affine_skew(tilt, phi, img, mask=None):
         x, y, w, h = cv2.boundingRect(tcorners.reshape(1, -1, 2))
         affine = np.hstack([affine, [[-x], [-y]]])
         img = cv2.warpAffine(img, affine, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
     if tilt != 1.0:
         s = 0.8*np.sqrt(tilt*tilt-1)
         img = cv2.GaussianBlur(img, (0, 0), sigmaX=s, sigmaY=0.01)
         img = cv2.resize(img, (0, 0), fx=1.0/tilt, fy=1.0, interpolation=cv2.INTER_NEAREST)
         affine[0] /= tilt
+
     if phi != 0.0 or tilt != 1.0:
         h, w = img.shape[:2]
         mask = cv2.warpAffine(mask, affine, (w, h), flags=cv2.INTER_NEAREST)
+
     aff_inverse = cv2.invertAffineTransform(affine)
+
     return img, mask, aff_inverse
+
 
 def a_detect(p, detector, img):
     """
@@ -53,10 +61,6 @@ def a_detect(p, detector, img):
     return keypoints, descrs
 
 
-def w_a_detect(args):
-    a_detect(*args)
-
-
 def parameter_generator(longitudes=None, latitudes=None):
     """
     this program is to calculate affine parameter based-on longitude and latitude
@@ -65,9 +69,11 @@ def parameter_generator(longitudes=None, latitudes=None):
         return [(1.0, 0.0)]
 
     arr = [(1.0, 0.0)]
+
     for t in longitudes:
         for phi in latitudes(t):
             arr.append((t, phi))
+
     return arr
 
 
@@ -108,7 +114,7 @@ def calc_affine_params(simu: str ='default'):
 
 def affine_detect(detector, img, mask=None, pool=None, simu_param='default'):
     """
-    affine_detect(detector, img, mask=None, pool=None) -> keypoints, descrs
+    affine_detect(features_data_structure, img, mask=None, pool=None) -> keypoints, descrs
 
     Apply a set of affine transormations to the image, detect keypoints and
     reproject them into initial image coordinates.
@@ -119,17 +125,21 @@ def affine_detect(detector, img, mask=None, pool=None, simu_param='default'):
 
     def f(p):
         t, phi = p
-        timg, tmask, Ai = affine_skew(t, phi, img, mask)
-        keypoints, descrs = detector.detectAndCompute(timg, tmask)
-        for kp in keypoints:
+        timg, tmask, ai = affine_skew(t, phi, img, mask)
+        kps, dcs = detector.detectAndCompute(timg, tmask)
+
+        for kp in kps:
             x, y = kp.pt
-            kp.pt = tuple(np.dot(Ai, (x, y, 1)))
-        if descrs is None:
-            descrs = []
-        return keypoints, descrs
+            kp.pt = tuple(np.dot(ai, (x, y, 1)))
+
+        if dcs is None:
+            dcs = []
+
+        return kps, dcs
 
     params = calc_affine_params(simu_param)
     keypoints, descrs = [], []
+
     if pool is None:
         ires = list(map(f, params))
     else:
@@ -142,8 +152,39 @@ def affine_detect(detector, img, mask=None, pool=None, simu_param='default'):
 
     return keypoints, np.array(descrs)
 
-def match_with_cross(matcher, descQ, kpQ, descT, kpT):
-    raw_matchesQT = matcher.knnMatch(descQ, trainDescriptors=descT, k=2)
-    raw_matchesTQ = matcher.knnMatch(descT, trainDescriptors=descQ, k=2)
-    pQ, pT, pairs = c_filter(kpQ, kpT, raw_matchesQT, raw_matchesTQ)
-    return pQ, pT, pairs
+def dump_into_pickle(pickle_name, keypoints, descrs):
+    index = []
+    for p in keypoints:
+        temp = (p.pt, p.size, p.angle, p.response, p.octave, p.class_id)
+        index.append(temp)
+
+    tmp_data = TemplateData(pickle_name)
+
+    with open(tmp_data.get_feature_pickle(pickle_name), mode='wb') as f:
+        pickle.dump((index, descrs), f)
+
+
+def load_from_pickle(pickle_name):
+    tmp_data = TemplateData(pickle_name)
+
+    with open(tmp_data.get_feature_pickle(pickle_name), mode='rb') as f:
+        index, descrs = pickle.load(f)
+
+    keypoints = []
+
+    for p in index:
+        temp = cv2.KeyPoint(x=p[0][0], y=p[0][1], _size=p[1], _angle=p[2],
+                            _response=p[3], _octave=p[4], _class_id=p[5])
+        keypoints.append(temp)
+
+    return keypoints, descrs
+
+
+# def match_with_cross(matcher, descQ, kpQ, descT, kpT):
+#     raw_matchesQT = matcher.knnMatch(descQ, trainDescriptors=descT, k=2)
+#     raw_matchesTQ = matcher.knnMatch(descT, trainDescriptors=descQ, k=2)
+#     pQ, pT, pairs = c_filter(kpQ, kpT, raw_matchesQT, raw_matchesTQ)
+#     return pQ, pT, pairs
+
+if __name__ == '__main__':
+    pass
