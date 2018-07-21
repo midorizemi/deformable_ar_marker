@@ -5,8 +5,8 @@ Feature Detector with Affine Simulation
 import cv2
 import numpy as np
 import logging
-import detector.affine_simulation_parameters as asparams
-from detector.affine_simulation_parameters import asift_basic_parameter_gene as asift_prams
+# local modules
+from commons.custom_find_obj import filter_matches_wcross as c_filter
 
 def affine_skew(tilt, phi, img, mask=None):
     """
@@ -52,8 +52,24 @@ def a_detect(p, detector, img):
         descrs = []
     return keypoints, descrs
 
+
 def w_a_detect(args):
     a_detect(*args)
+
+
+def parameter_generator(longitudes=None, latitudes=None):
+    """
+    this program is to calculate affine parameter based-on longitude and latitude
+    """
+    if longitudes is None or latitudes is None:
+        return [(1.0, 0.0)]
+
+    arr = [(1.0, 0.0)]
+    for t in longitudes:
+        for phi in latitudes(t):
+            arr.append((t, phi))
+    return arr
+
 
 def calc_affine_params(simu: str ='default'):
     """
@@ -62,29 +78,36 @@ def calc_affine_params(simu: str ='default'):
     :param simu: set simulation taype
     :return: list of taple
     """
+    longitudes = []
+    latitudes = lambda t: []
+
     if simu == 'default' or simu == 'asift' or simu is None:
-        return asparams.asift_basic_parameter_gene()
+        longitudes = 2 ** (0.5 * np.arange(1, 6))
+        latitudes = lambda t: np.arange(0, 180, 72.0 / t)
 
-    if simu == 'degrees':
+    elif simu == 'degrees':
         """半周する"""
-        return asparams.ap_hemisphere_gene(max_t=90, offset_t=10, max_p=180, offset_p=10)
+        longitudes = np.reciprocal(np.cos(np.radians(np.arange(10, 90, 10))))
+        latitudes = lambda t: np.arange(0, 180, 10)
 
-    if simu == 'degrees-full':
+    elif simu == 'degrees-full':
         """一周する"""
-        return asparams.ap_hemisphere_gene(max_t=90, offset_t=10, max_p=360, offset_p=10)
+        longitudes = np.reciprocal(np.cos(np.radians(np.arange(10, 90, 10))))
+        latitudes = lambda t: np.arange(0, 360, 10)
 
-    if simu == 'test2':
+    elif simu == 'test2':
         # This simulation is Test2 type
-        return asparams.ap_hemisphere_gene(max_t=11, offset_t=10, max_p=21, offset_p=10)
+        longitudes = np.reciprocal(np.cos(np.radians(np.arange(10, 11, 10))))
+        latitudes = lambda t: np.arange(0, 21, 10)
 
     if simu == 'test' or simu == 'sift':
         #This simulation is Test type"
         return 1.0, 0.0
 
+    return parameter_generator(longitudes, latitudes)
 
-
-def affine_detect(detector, img, mask=None, pool=None, simu_param=asift_prams()):
-    '''
+def affine_detect(detector, img, mask=None, pool=None, simu_param='default'):
+    """
     affine_detect(detector, img, mask=None, pool=None) -> keypoints, descrs
 
     Apply a set of affine transormations to the image, detect keypoints and
@@ -92,7 +115,7 @@ def affine_detect(detector, img, mask=None, pool=None, simu_param=asift_prams())
     See http://www.ipol.im/pub/algo/my_affine_sift/ for the details.
 
     ThreadPool object may be passed to speedup the computation.
-    '''
+    """
 
     def f(p):
         t, phi = p
@@ -105,11 +128,12 @@ def affine_detect(detector, img, mask=None, pool=None, simu_param=asift_prams())
             descrs = []
         return keypoints, descrs
 
+    params = calc_affine_params(simu_param)
     keypoints, descrs = [], []
     if pool is None:
-        ires = list(map(f, simu_param))
+        ires = list(map(f, params))
     else:
-        ires = pool.imap(f, simu_param)
+        ires = pool.imap(f, params)
 
     for i, (k, d) in enumerate(ires):
         print('affine sampling: {0:d} / {1:d}\r'.format(i+1, len(params)), end='')

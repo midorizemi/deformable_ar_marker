@@ -59,5 +59,9 @@ fabric.properties
 # Editor-based Rest Client
 .idea/httpRequests
 .python-version
-data/
-!data/*.gitkeep
+data/*
+!data/
+!data/.gitkeep
+!data/features/.gitkeep
+!data/logs/.gitkeep
+!data/raw/.gitkeep
