@@ -112,6 +112,7 @@ def calc_affine_params(simu: str ='default'):
 
     return parameter_generator(longitudes, latitudes)
 
+
 def affine_detect(detector, img, mask=None, pool=None, simu_param='default'):
     """
     affine_detect(features_data_structure, img, mask=None, pool=None) -> keypoints, descrs
@@ -178,7 +179,6 @@ def load_from_pickle(pickle_name):
         keypoints.append(temp)
 
     return keypoints, descrs
-
 
 # def match_with_cross(matcher, descQ, kpQ, descT, kpT):
 #     raw_matchesQT = matcher.knnMatch(descQ, trainDescriptors=descT, k=2)

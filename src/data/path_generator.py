@@ -4,7 +4,7 @@ File path generator
 import os
 
 
-class DataDir:
+class DataDir(object):
     def __init__(self):
         self.root = os.path.abspath(os.path.join(os.path.dirname(__file__),  os.pardir, os.pardir, 'data'))
         self.pwd = self.root
